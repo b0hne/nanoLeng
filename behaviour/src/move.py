@@ -57,7 +57,7 @@ class Looking_for_first_target(State):
         self.turn = 0
 
     def find_tag(self, tags, userdata):
-        print 'found \n'
+        print 'found 1\n'
         for tag in tags.detections:
             print "tag :"
             print tag.id
@@ -67,8 +67,8 @@ class Looking_for_first_target(State):
 
     def execute(self, userdata):
         print 'looking_for_first_target\n'
-        rospy.Subscriber('/tag_detections',
-                         AprilTagDetectionArray, self.find_tag, userdata)
+        subscriber = rospy.Subscriber('/tag_detections',
+                                      AprilTagDetectionArray, self.find_tag, userdata)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ros_rate)
         self.turn_left = Twist()
@@ -84,6 +84,8 @@ class Looking_for_first_target(State):
             self.rate.sleep()
         print 'found end '
         userdata.tag = self.tag
+        subscriber.unregister()
+        cmd_vel_pub.unregister()
         return self.outcome
 
 
@@ -98,6 +100,7 @@ class Approaching_target(State):
         self.newPosition = False
         self.outcome = None
         self.tag = None
+        self.counter = 0
 
     def calculate_twist(self):
         localTag = None
@@ -108,64 +111,82 @@ class Approaching_target(State):
             if self.block == count:
                 break
         self.twist = Twist()
-        distance_to_tag = sqrt(
-            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
 
         # fix hight
-        # vertical_angle_to_goal = atan2(
-        #     localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-        vertical_angle_to_tag = localTag.pose.pose.position.z
+        vertical_angle_to_tag = localTag.pose.pose.position.y
         print "vertical"
         print vertical_angle_to_tag
-        if vertical_angle_to_tag < (PI/2-0.1):
-            self.twist.linear.x = 0.0
-            self.twist.angular.x = 0.0
-            self.twist.linear.z = 0.1
 
-        elif vertical_angle_to_tag > (PI/2+0.1):
-            self.twist.linear.x = 0.0
-            self.twist.angular.x = 0.0
-            self.twist.linear.z = -0.1
-
-        # finish once tag is in reach
-        elif distance_to_tag < 0.5:
-            self.outcome = 'reached'
-
-        # turn towards tag
         horizontal_angle_to_tag = atan2(
-            localTag.pose.pose.position.x, localTag.pose.pose.position.y)
+            localTag.pose.pose.position.x, localTag.pose.pose.position.z)
         print "horrzontal"
         print horizontal_angle_to_tag
-        if horizontal_angle_to_tag < -0.1:
-            self.twist.linear.z = 0.0
-            self.twist.linear.x = 0.0
+
+        distance_to_tag = sqrt(
+            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
+        print 'distance'
+        print distance_to_tag
+
+        angle_to_tag = localTag.pose.pose.orientation.z
+        print 'angle'
+        print angle_to_tag
+
+        # finish once tag is in reach
+        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1:# and angle_to_tag < 0.1 and angle_to_tag > -0.1:
+            self.outcome = 'reached'
+            return
+
+        if vertical_angle_to_tag > 0.1:
+            self.twist.linear.z = -0.1
+
+        elif vertical_angle_to_tag < -0.1:
+            self.twist.linear.z = 0.1
+
+        # if distance_to_tag < 1:
+        #     if angle_to_tag < -0.1:
+        #         self.twist.linear.y = 0.1
+
+        #     elif angle_to_tag > 0.1:
+        #         self.twist.linear.y = -0.1
+
+        # if angle_to_tag < 0.1:
+        #     self.twist.linear
+
+        # turn towards tag
+        if horizontal_angle_to_tag < 0.1:
             self.twist.angular.z = 0.1
 
         elif horizontal_angle_to_tag > 0.1:
-            self.twist.linear.x = 0.0
-            self.twist.linear.z = 0.0
             self.twist.angular.z = -0.1
-        # otherwise move forward
-        else:
-            self.twist.angular.x = 0.0
-            self.twist.linear.z = 0.0
-            self.twist.angular.z = 0.0
 
-            self.twist.linear.x = 0.5
+        # otherwise move forward
+        if distance_to_tag < 0.5:
+            self.twist.linear.x = -0.05
+        elif distance_to_tag < 1.5:
+            self.twist.linear.x = 0.05
+        else:
+            self.twist.linear.x = 0.1
 
     def callback(self, tags):
+        print 'found 2\n'
+        self.counter += 1
         for tag in tags.detections:
-            if tag.id == id:
+            if tag.id == self.id:
+                print 'found tag'
                 self.block += 1
                 self.tag = tag
                 self.block += 1
+                self.counter = 0
                 self.newPosition = True
+        if self.counter > 15:
+            self.twist = Twist()
+            self.outcome = 'lost_visual'
 
     def execute(self, userdata):
         self.id = userdata.tag.id
         self.tag = userdata.tag
         self.calculate_twist()
-        rospy.Subscriber(
+        subscriber = rospy.Subscriber(
             '/tag_detections', AprilTagDetectionArray, self.callback)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         rate = rospy.Rate(ros_rate)
@@ -177,6 +198,16 @@ class Approaching_target(State):
 
             cmd_vel_pub.publish(self.twist)
             rate.sleep()
+        self.twist.angular.x = 0.0
+        self.twist.angular.y = 0.0
+        self.twist.angular.z = 0.0
+        self.twist.linear.x = 0.0
+        self.twist.linear.y = 0.0
+        self.twist.linear.z = 0.0
+        cmd_vel_pub.publish(self.twist)
+        subscriber.unregister()
+        cmd_vel_pub.unregister()
+        userdata.tag = self.tag
         return self.outcome
 
 
