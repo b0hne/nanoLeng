@@ -52,7 +52,7 @@ def scan_callback(tag):
 class Looking_for_first_target(State):
     def __init__(self):
         State.__init__(self, outcomes=['found', 'not_found', 'failure'], input_keys=[
-                       'tag'], output_keys=['tag'])
+                       'tags'], output_keys=['tags'])
         self.outcome = None
         self.turn = 0
 
@@ -83,7 +83,7 @@ class Looking_for_first_target(State):
             # print 'a'
             self.rate.sleep()
         print 'found end '
-        userdata.tag = self.tag
+        userdata.tags.append(self.tag)
         subscriber.unregister()
         cmd_vel_pub.unregister()
         return self.outcome
@@ -93,7 +93,7 @@ class Looking_for_first_target(State):
 class Approaching_target(State):
     def __init__(self):
         State.__init__(self, outcomes=['reached', 'lost_visual'], input_keys=[
-                       'tag'], output_keys=['tag'])
+                       'tags'], output_keys=['tags'])
         print 'approaching_target\n'
         self.block = 0
         self.twist = None
@@ -183,8 +183,8 @@ class Approaching_target(State):
             self.outcome = 'lost_visual'
 
     def execute(self, userdata):
-        self.id = userdata.tag.id
-        self.tag = userdata.tag
+        self.id = userdata.tags[-1].id
+        self.tag = userdata.tags[-1]
         self.calculate_twist()
         subscriber = rospy.Subscriber(
             '/tag_detections', AprilTagDetectionArray, self.callback)
@@ -207,7 +207,7 @@ class Approaching_target(State):
         cmd_vel_pub.publish(self.twist)
         subscriber.unregister()
         cmd_vel_pub.unregister()
-        userdata.tag = self.tag
+        userdata.tags.append(self.tag)
         return self.outcome
 
 
@@ -340,12 +340,12 @@ if __name__ == '__main__':
     rospy.Publisher('/turtle1/cmd_vel', Twist, queue_size=10)
 
     sm = StateMachine(outcomes=['success', 'failure'])
-    sm.userdata.tag = None
+    sm.userdata.tags = []
     with sm:
         # def result(userdata, sta)
         StateMachine.add('LOOKING_FOR_FIRST_TARGET', Looking_for_first_target(), transitions={
-                         'found': 'APPROACHING_TARGET', 'not_found': 'LOOKING_FOR_FIRST_TARGET'}, remapping={'tag': 'tag', 'tag': 'tag'})
+                         'found': 'APPROACHING_TARGET', 'not_found': 'LOOKING_FOR_FIRST_TARGET'}, remapping={'tags': 'tags', 'tags': 'tags'})
         StateMachine.add('APPROACHING_TARGET', Approaching_target(), transitions={
-                         'reached': 'success', 'lost_visual': 'failure'}, remapping={'tag': 'tag', 'tag': 'tag'})
+                         'reached': 'success', 'lost_visual': 'failure'}, remapping={'tags': 'tags', 'tags': 'tags'})
         # StateMachine.add('THREE', Three(), transitions={'visible':'ONE', 'not_visible':'TWO'}, remapping={'counter':'counter'})
     sm.execute()
