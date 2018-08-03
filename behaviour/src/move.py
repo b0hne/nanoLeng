@@ -132,7 +132,7 @@ class Approaching_target(State):
         print angle_to_tag
 
         # finish once tag is in reach
-        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1:# and angle_to_tag < 0.1 and angle_to_tag > -0.1:
+        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.1 and angle_to_tag > -0.1:
             self.outcome = 'reached'
             return
 
@@ -142,15 +142,15 @@ class Approaching_target(State):
         elif vertical_angle_to_tag < -0.1:
             self.twist.linear.z = 0.1
 
-        # if distance_to_tag < 1:
-        #     if angle_to_tag < -0.1:
-        #         self.twist.linear.y = 0.1
+        if distance_to_tag < 1:
+            if angle_to_tag < -0.1:
+                self.twist.linear.y = 0.1
 
-        #     elif angle_to_tag > 0.1:
-        #         self.twist.linear.y = -0.1
+            elif angle_to_tag > 0.1:
+                self.twist.linear.y = -0.1
 
-        # if angle_to_tag < 0.1:
-        #     self.twist.linear
+        if angle_to_tag < 0.1:
+            self.twist.linear
 
         # turn towards tag
         if horizontal_angle_to_tag < 0.1:
