@@ -14,6 +14,7 @@ from operator import itemgetter
 ROS_RATE = 20
 PI = 3.1415926535897
 MAX_TAG_DISTANCE = 0.7
+ABBORT_TAG = 587
 
 
 def from_degree(degree):
@@ -23,29 +24,35 @@ def from_degree(degree):
 # def scan_callback(tag):
 #     return
 
+    #count rotations for 'not_found' or 'corner'
+def update_rotation(imu, self):
+    if self.positive and imu.orientation.w > 0:
+        self.half_turn +=1
+        self.positive = False
+    if not self.positive and imu.orientation.w < 0:
+        self.half_turn +=1
+        self.positive = True
+
+def check_for_signal(tag):
+    if tag.id == ABBORT_TAG:
+        return 'abbort'
+    else:
+        return None
+
 
 class Looking_for_first_target(State):
     def __init__(self):
         State.__init__(self, outcomes=['found', 'not_found', 'failure'], input_keys=[
                        'tags'], output_keys=['tags'])
 
-
     def find_tag(self, tags, userdata):
         for tag in tags.detections:
-            # print "tag :"
-            # print tag.id
             if tag.id == 0 and self.outcome == None:
                 userdata.tags.append(tag)
                 self.outcome = 'found'
                 return
 
-    def update_rotation(self, imu):
-        if self.positive and imu.orientation.w > 0:
-            self.half_turn +=1
-            self.positive = False
-        if not self.positive and imu.orientation.w < 0:
-            self.half_turn +=1
-            self.positive = True
+
 
     def execute(self, userdata):
         self.outcome = None
@@ -55,7 +62,7 @@ class Looking_for_first_target(State):
         subscriber = rospy.Subscriber('/tag_detections',
                                       AprilTagDetectionArray, self.find_tag, userdata)
         subscriber = rospy.Subscriber('/rexrov/imu',
-                                      Imu, self.update_rotation)
+                                      Imu, update_rotation, self)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ROS_RATE)
         self.turn_left = Twist()
@@ -68,6 +75,7 @@ class Looking_for_first_target(State):
 
             cmd_vel_pub.publish(self.turn_left)
             self.rate.sleep()
+        print 'found initial tag'
         cmd_vel_pub.publish(Twist())
         subscriber.unregister()
         cmd_vel_pub.unregister()
@@ -77,7 +85,7 @@ class Looking_for_first_target(State):
 # approach tag in input
 class Approaching_target(State):
     def __init__(self):
-        State.__init__(self, outcomes=['reached', 'lost_visual'], input_keys=[
+        State.__init__(self, outcomes=['reached', 'lost_visual', 'abbort'], input_keys=[
                        'tags'], output_keys=['tags'])
 
     def calculate_twist(self):
@@ -141,11 +149,12 @@ class Approaching_target(State):
 
 
     def get_tags(self, tags):
-        print 'found\n'
         self.counter += 1
         for tag in tags.detections:
+            if check_for_signal(tag) != None:
+                self.outcome = check_for_signal(tag)
+                return
             if tag.id == self.tag.id:
-                print 'found tag'
                 self.block_counter += 1
                 self.tag = tag
                 self.block_counter += 1
@@ -174,44 +183,40 @@ class Approaching_target(State):
 
             cmd_vel_pub.publish(self.twist)
             rate.sleep()
+        print 'reached'
+        print self.tag.id
         self.twist = Twist()
         cmd_vel_pub.publish(self.twist)
         subscriber.unregister()
         cmd_vel_pub.unregister()
-        # userdata.tags.append(self.tag)
         return self.outcome
 
 
 class Find_tag_again(State):
     def __init__(self):
-        State.__init__(self, outcomes=['found', 'not_found', 'failure'], input_keys=[
+        State.__init__(self, outcomes=['found', 'not_found', 'failure', 'abbort'], input_keys=[
                        'tags'], output_keys=['tags'])
 
 
     def find_tag(self, tags, userdata):
         for tag in tags.detections:
-            print tag.id
+            if check_for_signal != None:
+                self.outcome = check_for_signal(tag)
+                return
             if tag.id == userdata.tags[-1].id:
                 self.outcome = 'found'
-                return
-    def update_rotation(self, imu):
-        if self.positive and imu.orientation.w > 0:
-            self.half_turn +=1
-            positive = False
-        if not positive and imu.orientation.w < 0:
-            self.half_turn +=1
-            self.positive = True
+                # return
 
 
     def execute(self, userdata):
         self.outcome = None
         self.half_turn = 0
         self.positive = True
-        print 'looking_for_first_target :\n'
+        print 'looking_for_lost_tag'
         subscriber = rospy.Subscriber('/tag_detections',
                                       AprilTagDetectionArray, self.find_tag, userdata)
         subscriber = rospy.Subscriber('/rexrov/imu',
-                                      Imu, self.update_rotation)
+                                      Imu, update_rotation, self)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ROS_RATE)
         self.turn_right = Twist()
@@ -220,10 +225,10 @@ class Find_tag_again(State):
         while self.outcome == None:
             if self.half_turn > 2:
                 self.outcome = 'not_found'
-
             cmd_vel_pub.publish(self.turn_right)
-            # print 'a'
             self.rate.sleep()
+        print 'outcome :'
+        print self.outcome
         subscriber.unregister()
         cmd_vel_pub.unregister()
         return self.outcome
@@ -231,27 +236,26 @@ class Find_tag_again(State):
 
 class Corner(State):
     def __init__(self):
-        State.__init__(self, outcomes=['found_next', 'failure'], input_keys=[
+        State.__init__(self, outcomes=['found_next', 'failure', 'abbort'], input_keys=[
                        'tags'], output_keys=['tags'])
 
     def find_tag(self, tags, userdata):
         #order from left to right
         tags.detections.sort(key=lambda x: x.pose.pose.position.x)
-        print 'detected in order :'
-        for tag in tags.detections:
-            print tag.id
-        
         counter = -1
         corner = -1
         new_tag = -1
         for tag in tags.detections:
+            if check_for_signal != None:
+                self.outcome = check_for_signal(tag)
+                return
             counter += 1
             if tag.id == self.corner_tag.id:
                 self.block_counter += 1
                 self.corner_tag = tag
                 self.block_counter += 1
                 corner = counter
-                break
+                # break
         if corner > 0:
             new_tag = corner - 1
             dif_x = tags.detections[new_tag].pose.pose.position.x - tags.detections[corner].pose.pose.position.x
@@ -260,10 +264,8 @@ class Corner(State):
             distance_to_new_tag = sqrt(pow(tags.detections[corner -1].pose.pose.position.x, 2) + pow(tags.detections[corner -1].pose.pose.position.y, 2) + pow(tags.detections[corner -1].pose.pose.position.z, 2))
 
             # if distance_tags > MAX_TAG_DISTANCE:
-            if distance_tags < 0.8 and distance_to_new_tag < 1:
+            if distance_tags < 0.8 and distance_to_new_tag < 1 and self.outcome == None:
                 new_tag = corner - 1
-                print 'found new tag'
-                print tags.detections[new_tag].id
                 userdata.tags.append(tags.detections[new_tag])
                 self.outcome = 'found_next'
         if corner < 0:
@@ -278,8 +280,6 @@ class Corner(State):
             if self.block_counter == count:
                 break
         self.twist = Twist()
-        print 'moving towards:'
-        print localTag.id
         # fix hight
         #get tag into vertical middle of camera
         vertical_angle_to_tag = localTag.pose.pose.position.y
@@ -312,13 +312,6 @@ class Corner(State):
                 self.twist.linear.y = 0.05
 
 
-    def update_rotation(self, imu):
-        if self.positive and imu.orientation.w > 0:
-            self.half_turn +=1
-            self.positive = False
-        if not self.positive and imu.orientation.w < 0:
-            self.half_turn +=1
-            self.positive = True
 
     def execute(self, userdata):
         self.outcome = None
@@ -327,8 +320,8 @@ class Corner(State):
         self.corner_tag = userdata.tags[-1]
         self.block_counter = 0
         self.timeout = 0
+        print 'corner handling'
 
-        print 'looking_for_next_target\n'
         subscriber = rospy.Subscriber('/tag_detections',
                                       AprilTagDetectionArray, self.find_tag, userdata)
 
@@ -344,19 +337,18 @@ class Corner(State):
             if self.timeout > 8:
                 self.outcome = 'failure'
         print 'found next'
+        print tags[-1].id
         twist = Twist()
         cmd_vel_pub.publish(twist)
         subscriber.unregister()
         cmd_vel_pub.unregister()
-        print 'tags'
-        print len(userdata.tags)
         return self.outcome
 
 
 
 class Looking_for_next_target(State):
     def __init__(self):
-        State.__init__(self, outcomes=['found_next', 'corner', 'finished_row', 'failure'], input_keys=[
+        State.__init__(self, outcomes=['found_next', 'corner', 'finished_row', 'failure', 'abbort'], input_keys=[
                        'tags'], output_keys=['tags'])
 
 
@@ -367,12 +359,13 @@ class Looking_for_next_target(State):
         new_tag = -1
         tags.detections.sort(key=lambda x: x.pose.pose.position.x)
         for tag in tags.detections:
+            if check_for_signal != None:
+                self.outcome = check_for_signal(tag)
+                return
             counter += 1
             if tag.id == self.old_tag_id:
                 last_used_tag = counter
-                break
-        print self.half_turn
-        print last_used_tag
+                # break
         if last_used_tag >= 0 and self.half_turn >= 2:
             self.outcome = 'corner'
             return
@@ -381,12 +374,8 @@ class Looking_for_next_target(State):
             dif_x = tags.detections[new_tag].pose.pose.position.x - tags.detections[last_used_tag].pose.pose.position.x
             dif_y = tags.detections[new_tag].pose.pose.position.y - tags.detections[last_used_tag].pose.pose.position.y
             distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
-            print "distance"
-            print distance_tags
-            if distance_tags < MAX_TAG_DISTANCE:
+            if distance_tags < MAX_TAG_DISTANCE and self.outcome == None:
                 new_tag = last_used_tag - 1
-                print 'found new tag'
-                print tags.detections[new_tag].id
                 userdata.tags.append(tags.detections[new_tag])
                 if tags.detections[new_tag].id == 0:
                     self.outcome = 'finished_row'
@@ -394,13 +383,6 @@ class Looking_for_next_target(State):
                     self.outcome = 'found_next'
         
         
-    def update_rotation(self, imu):
-        if self.positive and imu.orientation.w > 0:
-            self.half_turn +=1
-            self.positive = False
-        if not self.positive and imu.orientation.w < 0:
-            self.half_turn +=1
-            self.positive = True
 
     def execute(self, userdata):
         self.outcome = None
@@ -411,7 +393,7 @@ class Looking_for_next_target(State):
         subscriber = rospy.Subscriber('/tag_detections',
                                       AprilTagDetectionArray, self.find_tag, userdata)
         subscriber = rospy.Subscriber('/rexrov/imu',
-                                      Imu, self.update_rotation)
+                                      Imu, update_rotation, self)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ROS_RATE)
         self.turn_left = Twist()
@@ -424,13 +406,12 @@ class Looking_for_next_target(State):
 
             cmd_vel_pub.publish(self.turn_left)
             self.rate.sleep()
-        print 'found next'
+        print 'outcome :'
+        print self.outcome
         twist = Twist()
         cmd_vel_pub.publish(twist)
         subscriber.unregister()
         cmd_vel_pub.unregister()
-        print 'tags'
-        print len(userdata.tags)
         return self.outcome
 
 
@@ -464,19 +445,19 @@ class Looking_for_next_target(State):
 #             continue
 
 
-# class Two(State):
-#     def __init__(self):
-#         State.__init__(self, outcomes=['visible', 'not_visible'], input_keys=['counter', 'rate'], output_keys=['counter'])
-#     def execute(self, userdata):
-#         print 'two'
-#         print userdata.counter
-#         sleep(1)
-#         if (userdata.counter % 5 == 0):
-#             userdata.counter = userdata.counter + 1
-#             return 'visible'
-#         else:
-#             userdata.counter = userdata.counter + 1
-#             return 'not_visible'
+class Abbort(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['returned', 'failure'], input_keys=['tags'], output_keys=['tags'])
+
+    def execute(self, userdata):
+        print 'abbort'
+
+class Docking(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['success', 'failure'], input_keys=['tags'], output_keys=['tags'])
+
+    def execute(self, userdata):
+        print 'docking'
 
 # class Three(State):
 #     def __init__(self):
@@ -504,12 +485,16 @@ if __name__ == '__main__':
         StateMachine.add('LOOKING_FOR_FIRST_TARGET', Looking_for_first_target(), transitions={
                          'found': 'APPROACHING_TARGET', 'not_found': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('APPROACHING_TARGET', Approaching_target(), transitions={
-                         'reached': 'LOOKING_FOR_NEXT_TARGET', 'lost_visual': 'failure'}, remapping={'tags': 'tags'})
+                         'reached': 'LOOKING_FOR_NEXT_TARGET', 'lost_visual': 'failure', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
         StateMachine.add('LOOKING_FOR_NEXT_TARGET', Looking_for_next_target(), transitions={
-                         'found_next': 'APPROACHING_TARGET', 'corner':'CORNER', 'failure': 'failure', 'finished_row' : 'success'}, remapping={'tags': 'tags'})
+                         'found_next': 'APPROACHING_TARGET', 'corner':'CORNER', 'failure': 'failure', 'finished_row' : 'success', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
                          
         StateMachine.add('FIND_TAG_AGAIN', Find_tag_again(), transitions={
-                         'found': 'APPROACHING_TARGET', 'not_found': 'failure'}, remapping={'tags': 'tags'})
+                         'found': 'APPROACHING_TARGET', 'not_found': 'failure', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
         StateMachine.add('CORNER', Corner(), transitions={
-                         'found_next': 'APPROACHING_TARGET', 'failure': 'failure'}, remapping={'tags': 'tags'})
+                         'found_next': 'APPROACHING_TARGET', 'failure': 'failure', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
+        StateMachine.add('ABBORT', Abbort(), transitions={
+                         'returned': 'DOCKING', 'failure': 'failure'}, remapping={'tags': 'tags'})
+        StateMachine.add('DOCKING', Docking(), transitions={
+                         'success': 'success', 'failure': 'failure'}, remapping={'tags': 'tags'})
     sm.execute()
