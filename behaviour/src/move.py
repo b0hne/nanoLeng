@@ -92,37 +92,34 @@ class Approaching_target(State):
         print 'moving towards:'
         print localTag.id
 
+        #get tag into vertical middle of camera
         vertical_angle_to_tag = localTag.pose.pose.position.y
+        if vertical_angle_to_tag > 0.1:
+            self.twist.linear.z = -0.15
+        elif vertical_angle_to_tag < -0.1:
+            self.twist.linear.z = 0.15
 
-        
-        horizontal_angle_to_tag = atan2(
-            localTag.pose.pose.position.x, localTag.pose.pose.position.z)
+        #get tag into horizontal middle of camera
+        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
 
+        if horizontal_angle_to_tag < -0.1:
+            self.twist.angular.z = 0.15
+
+        elif horizontal_angle_to_tag > 0.1:
+            self.twist.angular.z = -0.15
+
+        #move forwards
         distance_to_tag = sqrt(
             pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
+        if distance_to_tag < 0.8:
+            self.twist.linear.x = -0.05
+        elif distance_to_tag < 0.9:
+            self.twist.linear.x = 0.05
+        else:
+            self.twist.linear.x = 0.1
 
+                # allign to tag
         angle_to_tag = localTag.pose.pose.orientation.z
-
-        # finish once tag is in reach
-        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.1:
-            self.outcome = 'reached'
-            return
-
-
-        if vertical_angle_to_tag > 0.1:
-            if distance_to_tag < 0.1:
-                self.twist.linear.z = -0.1
-            else:
-                self.twist.linear.z = -0.15
-
-        #get tag into middle of camera
-        if vertical_angle_to_tag < -0.1:
-            if distance_to_tag > -0.1:
-                self.twist.linear.z = 0.1
-            else:
-                self.twist.linear.z = 0.15
-
-
         if distance_to_tag < 1.5:
             if angle_to_tag < -0.1:
                 self.twist.linear.y = 0.05
@@ -134,22 +131,14 @@ class Approaching_target(State):
                 self.twist.linear.y = 0.1
 
             elif angle_to_tag > 0.1:
-                self.twist.linear.y = -0.1
+                self.twist.linear.y = -0.1  
 
-        # turn towards tag
-        if horizontal_angle_to_tag < -0.1:
-            self.twist.angular.z = 0.1
+         # finish once tag is in reach
+        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.1 and angle_to_tag > -0.3:
+            self.outcome = 'reached'
+            return
 
-        elif horizontal_angle_to_tag > 0.1:
-            self.twist.angular.z = -0.1
 
-        # otherwise move forward
-        if distance_to_tag < 0.5:
-            self.twist.linear.x = -0.05
-        elif distance_to_tag < 1.5:
-            self.twist.linear.x = 0.05
-        else:
-            self.twist.linear.x = 0.1
 
     def get_tags(self, tags):
         print 'found\n'
@@ -162,8 +151,7 @@ class Approaching_target(State):
                 self.block_counter += 1
                 self.counter = 0
                 self.newPosition = True
-        if self.counter > 20:
-            self.twist = Twist()
+        if self.counter > 15:
             self.outcome = 'lost_visual'
 
     def execute(self, userdata):
@@ -243,7 +231,7 @@ class Find_tag_again(State):
 
 class Corner(State):
     def __init__(self):
-        State.__init__(self, outcomes=['found', 'failure', 'not_found'], input_keys=[
+        State.__init__(self, outcomes=['found_next', 'failure'], input_keys=[
                        'tags'], output_keys=['tags'])
 
     def find_tag(self, tags, userdata):
@@ -269,15 +257,17 @@ class Corner(State):
             dif_x = tags.detections[new_tag].pose.pose.position.x - tags.detections[corner].pose.pose.position.x
             dif_y = tags.detections[new_tag].pose.pose.position.y - tags.detections[corner].pose.pose.position.y
             distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
-            print "distance"
-            print distance_tags
+            distance_to_new_tag = sqrt(pow(tags.detections[corner -1].pose.pose.position.x, 2) + pow(tags.detections[corner -1].pose.pose.position.y, 2) + pow(tags.detections[corner -1].pose.pose.position.z, 2))
+
             # if distance_tags > MAX_TAG_DISTANCE:
-            if distance_tags < 0.8:
+            if distance_tags < 0.8 and distance_to_new_tag < 1:
                 new_tag = corner - 1
                 print 'found new tag'
                 print tags.detections[new_tag].id
                 userdata.tags.append(tags.detections[new_tag])
                 self.outcome = 'found_next'
+        if corner < 0:
+            self.timeout += 1
 
     def calculate_twist(self):
         localTag = None
@@ -291,52 +281,36 @@ class Corner(State):
         print 'moving towards:'
         print localTag.id
         # fix hight
+        #get tag into vertical middle of camera
         vertical_angle_to_tag = localTag.pose.pose.position.y
-        # print "vertical"
-        # print vertical_angle_to_tag
-
-        horizontal_angle_to_tag = atan2(
-            localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-        # print "horrzontal"
-        # print horizontal_angle_to_tag
-
-        distance_to_tag = sqrt(
-            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
-        # print 'distance'
-        # print distance_to_tag
-
-        
-        #get tag into vertical center
         if vertical_angle_to_tag > 0.1:
-            if vertical_angle_to_tag < 0.1:
-                self.twist.linear.z = -0.1
-            else:
-                self.twist.linear.z = -0.15
+            self.twist.linear.z = -0.15
+        elif vertical_angle_to_tag < -0.1:
+            self.twist.linear.z = 0.15
 
-        #get tag into vertical center
-        if vertical_angle_to_tag < -0.1:
-            if vertical_angle_to_tag > -0.1:
-                self.twist.linear.z = 0.1
-            else:
-                self.twist.linear.z = 0.15
+        #get tag into horizontal middle of camera
+        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
 
-        #twist right
-            self.twist.linear.y = 0.05
-
-        # keep tag in center
-        if horizontal_angle_to_tag < 0.1:
-            self.twist.angular.z = 0.1
+        if horizontal_angle_to_tag < -0.1:
+            self.twist.angular.z = 0.15
 
         elif horizontal_angle_to_tag > 0.1:
-            self.twist.angular.z = -0.1
+            self.twist.angular.z = -0.15
 
-        # keepdistance to tag
+        #move forwards
+        distance_to_tag = sqrt(
+            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
         if distance_to_tag < 0.5:
             self.twist.linear.x = -0.05
-        elif distance_to_tag < 1.5:
+        elif distance_to_tag < 0.8:
             self.twist.linear.x = 0.05
         else:
             self.twist.linear.x = 0.1
+
+                # allign to tag
+        if distance_to_tag < 0.6:
+                self.twist.linear.y = 0.05
+
 
     def update_rotation(self, imu):
         if self.positive and imu.orientation.w > 0:
@@ -353,21 +327,22 @@ class Corner(State):
         self.corner_tag = userdata.tags[-1]
         self.block_counter = 0
         self.timeout = 0
+
         print 'looking_for_next_target\n'
         subscriber = rospy.Subscriber('/tag_detections',
                                       AprilTagDetectionArray, self.find_tag, userdata)
-        subscriber = rospy.Subscriber('/rexrov/imu',
-                                      Imu, self.update_rotation)
+
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ROS_RATE)
 
         while self.outcome == None:
             # count if turns in self.turn
-            if self.half_turn > 2:
-                self.outcome = 'not_found'
+            
             self.calculate_twist()
             cmd_vel_pub.publish(self.twist)
             self.rate.sleep()
+            if self.timeout > 8:
+                self.outcome = 'failure'
         print 'found next'
         twist = Twist()
         cmd_vel_pub.publish(twist)
@@ -381,7 +356,7 @@ class Corner(State):
 
 class Looking_for_next_target(State):
     def __init__(self):
-        State.__init__(self, outcomes=['found_next', 'corner', 'failure'], input_keys=[
+        State.__init__(self, outcomes=['found_next', 'corner', 'finished_row', 'failure'], input_keys=[
                        'tags'], output_keys=['tags'])
 
 
@@ -413,7 +388,10 @@ class Looking_for_next_target(State):
                 print 'found new tag'
                 print tags.detections[new_tag].id
                 userdata.tags.append(tags.detections[new_tag])
-                self.outcome = 'found_next'
+                if tags.detections[new_tag].id == 0:
+                    self.outcome = 'finished_row'
+                else:
+                    self.outcome = 'found_next'
         
         
     def update_rotation(self, imu):
@@ -528,10 +506,10 @@ if __name__ == '__main__':
         StateMachine.add('APPROACHING_TARGET', Approaching_target(), transitions={
                          'reached': 'LOOKING_FOR_NEXT_TARGET', 'lost_visual': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('LOOKING_FOR_NEXT_TARGET', Looking_for_next_target(), transitions={
-                         'found_next': 'APPROACHING_TARGET', 'corner':'CORNER'}, remapping={'tags': 'tags'})
+                         'found_next': 'APPROACHING_TARGET', 'corner':'CORNER', 'failure': 'failure', 'finished_row' : 'success'}, remapping={'tags': 'tags'})
                          
         StateMachine.add('FIND_TAG_AGAIN', Find_tag_again(), transitions={
                          'found': 'APPROACHING_TARGET', 'not_found': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('CORNER', Corner(), transitions={
-                         'found': 'APPROACHING_TARGET', 'not_found': 'failure'}, remapping={'tags': 'tags'})
+                         'found_next': 'APPROACHING_TARGET', 'failure': 'failure'}, remapping={'tags': 'tags'})
     sm.execute()
