@@ -13,7 +13,7 @@ from operator import itemgetter
 
 ROS_RATE = 20
 PI = 3.1415926535897
-MAX_TAG_DISTANCE = 0.7
+MAX_TAG_DISTANCE = 0.6
 ABBORT_TAG = 586
 
 
@@ -39,36 +39,35 @@ def check_for_signal(tag):
     else:
         return None
 
-
 def calculate_twist(self):
-    localTag = None
+    self.localTag = None
     while True:
         count = self.block_counter
         if (count % 2) == 0:
-            localTag = self.main_tag
+            self.localTag = self.main_tag
         if self.block_counter == count:
             break
     self.twist = Twist()
-    # fix hight
+    
     #get tag into vertical middle of camera
-    vertical_angle_to_tag = localTag.pose.pose.position.y
+    vertical_angle_to_tag = self.localTag.pose.pose.position.y
+    self.vertical_angle_to_tag = vertical_angle_to_tag
     if vertical_angle_to_tag > 0.1:
         self.twist.linear.z = -0.15
     elif vertical_angle_to_tag < -0.1:
         self.twist.linear.z = 0.15
 
     #get tag into horizontal middle of camera
-    horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-
+    horizontal_angle_to_tag = atan2(self.localTag.pose.pose.position.x, self.localTag.pose.pose.position.z)
+    self.horizontal_angle_to_tag = horizontal_angle_to_tag
     if horizontal_angle_to_tag < -0.1:
         self.twist.angular.z = 0.15
-
     elif horizontal_angle_to_tag > 0.1:
         self.twist.angular.z = -0.15
 
     #move forwards
     distance_to_tag = sqrt(
-        pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
+        pow(self.localTag.pose.pose.position.x, 2) + pow(self.localTag.pose.pose.position.y, 2) + pow(self.localTag.pose.pose.position.z, 2))
     self.distance_to_tag = distance_to_tag
     if distance_to_tag < 0.5:
         self.twist.linear.x = -0.05
@@ -133,46 +132,47 @@ class Approaching_target(State):
                        'tags'], output_keys=['tags'])
 
     def calculate_twist(self):
-        localTag = None
-        while True:
-            count = self.block_counter
-            if (count % 2) == 0:
-                localTag = self.tag
-            if self.block_counter == count:
-                break
-        self.twist = Twist()
-        print 'moving towards:'
-        print localTag.id
+        # localTag = None
+        # while True:
+        #     count = self.block_counter
+        #     if (count % 2) == 0:
+        #         localTag = self.tag
+        #     if self.block_counter == count:
+        #         break
+        # self.twist = Twist()
+        # print 'moving towards:'
+        # print localTag.id
 
-        #get tag into vertical middle of camera
-        vertical_angle_to_tag = localTag.pose.pose.position.y
-        if vertical_angle_to_tag > 0.1:
-            self.twist.linear.z = -0.15
-        elif vertical_angle_to_tag < -0.1:
-            self.twist.linear.z = 0.15
+        # #get tag into vertical middle of camera
+        # vertical_angle_to_tag = localTag.pose.pose.position.y
+        # if vertical_angle_to_tag > 0.1:
+        #     self.twist.linear.z = -0.15
+        # elif vertical_angle_to_tag < -0.1:
+        #     self.twist.linear.z = 0.15
 
-        #get tag into horizontal middle of camera
-        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
+        # #get tag into horizontal middle of camera
+        # horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
 
-        if horizontal_angle_to_tag < -0.1:
-            self.twist.angular.z = 0.15
+        # if horizontal_angle_to_tag < -0.1:
+        #     self.twist.angular.z = 0.15
 
-        elif horizontal_angle_to_tag > 0.1:
-            self.twist.angular.z = -0.15
+        # elif horizontal_angle_to_tag > 0.1:
+        #     self.twist.angular.z = -0.15
 
-        #move forwards
-        distance_to_tag = sqrt(
-            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
-        if distance_to_tag < 0.8:
-            self.twist.linear.x = -0.05
-        elif distance_to_tag < 0.9:
-            self.twist.linear.x = 0.05
-        else:
-            self.twist.linear.x = 0.1
+        # #move forwards
+        # distance_to_tag = sqrt(
+        #     pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
+        # if distance_to_tag < 0.8:
+        #     self.twist.linear.x = -0.05
+        # elif distance_to_tag < 0.9:
+        #     self.twist.linear.x = 0.05
+        # else:
+        #     self.twist.linear.x = 0.1
+        calculate_twist(self)
 
                 # allign to tag
-        angle_to_tag = localTag.pose.pose.orientation.z
-        if distance_to_tag < 1.5:
+        angle_to_tag = self.main_tag.pose.pose.orientation.z
+        if self.distance_to_tag < 1.5:
             if angle_to_tag < -0.1:
                 self.twist.linear.y = 0.05
 
@@ -186,7 +186,7 @@ class Approaching_target(State):
                 self.twist.linear.y = -0.1  
 
          # finish once tag is in reach
-        if distance_to_tag < 1 and vertical_angle_to_tag < (0.1) and vertical_angle_to_tag > (-0.1) and horizontal_angle_to_tag < 0.1 and horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
+        if self.distance_to_tag < 1 and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
             self.outcome = 'reached'
             return
 
@@ -198,9 +198,9 @@ class Approaching_target(State):
             if check_for_signal(tag) != None:
                 self.outcome = check_for_signal(tag)
                 return
-            if tag.id == self.tag.id:
+            if tag.id == self.main_tag.id:
                 self.block_counter += 1
-                self.tag = tag
+                self.main_tag = tag
                 self.block_counter += 1
                 self.counter = 0
                 self.newPosition = True
@@ -212,7 +212,7 @@ class Approaching_target(State):
         self.twist = None
         self.newPosition = False
         self.outcome = None
-        self.tag = userdata.tags[-1]
+        self.main_tag = userdata.tags[-1]
         self.counter = 0
         subscriber_tag = rospy.Subscriber(
             '/tag_detections', AprilTagDetectionArray, self.get_tags)
@@ -228,7 +228,7 @@ class Approaching_target(State):
             cmd_vel_pub.publish(self.twist)
             rate.sleep()
         print 'reached'
-        print self.tag.id
+        print self.main_tag.id
         self.twist = Twist()
         cmd_vel_pub.publish(self.twist)
         subscriber_tag.unregister()
@@ -496,47 +496,71 @@ class Looking_for_next_target(State):
 
 class Abbort(State):
     def __init__(self):
-        State.__init__(self, outcomes=['ready_to_dock', 'failure'], input_keys=['tags'], output_keys=['tags'])
-        
-    def get_oldest_tag(self, tags, userdata):
+        State.__init__(self, outcomes=['ready_to_dock', 'corner', 'no_old_tags', 'failure'], input_keys=['tags'], output_keys=['tags'])     
+    
+    def find_oldest_tag(self, tags, userdata):
+        counter = -1
         if self.outcome == None:
-            self.none_found = True
             for old_tag in userdata.tags:
+                counter += 1
                 for tag in tags.detections:
-                    if tag.id == 0:
-                        distance_to_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
-                        if distance_to_tag < 0.7:
-                            self.outcome = 'ready_to_dock'
-                    if tag.id == old_tag.id:
+                    #if oldest tag is found
+                    if counter > self.index:
+                        self.lost += 1
+                        return
+                    if self.main_tag != None and tag.id == self.main_tag.id:
                         self.block_counter +=1
                         self.main_tag = tag
                         self.block_counter +=1
-                        self.none_found = False
-                        print 'earliest tag :'
-                        print self.main_tag.id
-                        return                
+                        distance_to_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
+                        if distance_to_tag < 0.7:
+                            self.reached = True
+                            if tag.id == 0:
+                                self.outcome = 'ready_to_dock'
+                        self.lost = 0
+                        return
+                    if tag.id == old_tag.id:
+                        self.index = counter
+                        if self.main_tag != None and tag.id != self.main_tag.id:
+                            self.reached = False
+                        counter = 0
+                        self.block_counter +=1
+                        self.main_tag = tag
+                        self.block_counter +=1
+                        print 'tag :'
+                        print self.main_tag
+                        self.lost = 0
+                        return
 
     def execute(self, userdata):
         self.outcome = None
         self.half_turn = 0
         self.positive = True
         self.block_counter = 0
-        self.main_tag = userdata.tags[-1]
-        self.none_found = False
+        self.index = len(userdata.tags) -1
+        self.main_tag = None
+        self.reached = False
         self.twist = None
+        self.lost = 0
         print 'abbort, returning home'
         subscriber_tag = rospy.Subscriber('/tag_detections',
-                                      AprilTagDetectionArray, self.get_oldest_tag, userdata)
+                                      AprilTagDetectionArray, self.find_oldest_tag, userdata)
         subscriber_imu = rospy.Subscriber('/rexrov/imu',
                                       Imu, update_rotation, self)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
         self.rate = rospy.Rate(ROS_RATE)
         self.turn_right = Twist()
+        # while self.main_tag == None:
+        #     pass
         while self.outcome == None:
-            calculate_twist(self)
-            if self.distance_to_tag < 0.7:
-                self.twist.linear.y = 0.05
+            if self.main_tag != None and not self.reached:
+                calculate_twist(self)
+            else:
+                self.twist = Twist()
+                self.twist.angular.z = -0.3
             cmd_vel_pub.publish(self.twist)
+            if self.half_turn > 2 and self.lost == 0:
+                self.outcome = 'corner'
             self.rate.sleep()
         print 'outcome :'
         print self.outcome
@@ -546,7 +570,160 @@ class Abbort(State):
         subscriber_imu.unregister()
         cmd_vel_pub.unregister()
         return self.outcome
-        
+
+class Abbort_lost_tags(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['found', 'failure'], input_keys=['tags'], output_keys=['tags'])
+    def find_tag(self, tags, userdata):
+        if self.outcome == None:
+            for old_tag in userdata.tags:
+                for tag in tags.detections:
+                    if tag.id == old_tag.id:
+                        self.outcome = 'found'
+                        return
+
+
+    def execute(self, userdata):
+        self.outcome = None
+        self.half_turn = 0
+        self.positive = True
+        print 'abbort_lost_tags'
+        subscriber_tag = rospy.Subscriber('/tag_detections',
+                                      AprilTagDetectionArray, self.find_tag, userdata)
+        subscriber_imu = rospy.Subscriber('/rexrov/imu',
+                                      Imu, update_rotation, self)
+        cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
+        self.rate = rospy.Rate(ROS_RATE)
+        self.turn_right = Twist()
+        self.turn_right.angular.z = -0.3  # from_degree(45)
+
+        while self.outcome == None:
+            if self.half_turn > 2:
+                self.outcome = 'not_found'
+            cmd_vel_pub.publish(self.turn_right)
+            self.rate.sleep()
+        print 'outcome :'
+        print self.outcome
+        twist = Twist()
+        cmd_vel_pub.publish(twist)
+        subscriber_tag.unregister()
+        subscriber_imu.unregister()
+        cmd_vel_pub.unregister()
+        return self.outcome
+
+
+class Abbort_corner(State):
+    def __init__(self):
+        State.__init__(self, outcomes=['found', 'failure'], input_keys=['tags'], output_keys=['tags'])
+
+    def find_oldest_tag(self, tags, userdata):
+        counter = -1
+        if self.outcome == None:
+            for old_tag in userdata.tags:
+                counter += 1
+                for tag in tags.detections:
+                    #if oldest tag is found
+                    if counter > self.index:
+                        self.lost += 1
+                        return
+                    if self.main_tag != None and tag.id == self.main_tag.id:
+                        self.block_counter +=1
+                        self.main_tag = tag
+                        self.block_counter +=1
+                        self.lost = 0
+                        return
+                    if self.main_tag != None and tag.id != self.main_tag.id:
+                        self.outcome = 'found'
+                        return
+                    # find cornertag
+                    if tag.id == old_tag.id:
+                        self.index = counter
+                        self.block_counter +=1
+                        self.main_tag = tag
+                        self.block_counter +=1
+                        print 'tag :'
+                        print self.main_tag
+                        self.lost = 0
+                        return
+
+    def calculate_twist(self):
+        localTag = None
+        while True:
+            count = self.block_counter
+            if (count % 2) == 0:
+                localTag = self.main_tag
+            if self.block_counter == count:
+                break
+        self.twist = Twist()
+        # fix hight
+        #get tag into vertical middle of camera
+        vertical_angle_to_tag = localTag.pose.pose.position.y
+        if vertical_angle_to_tag > 0.1:
+            self.twist.linear.z = -0.15
+        elif vertical_angle_to_tag < -0.1:
+            self.twist.linear.z = 0.15
+
+        #get tag into horizontal middle of camera
+        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
+
+        if horizontal_angle_to_tag < -0.1:
+            self.twist.angular.z = 0.15
+
+        elif horizontal_angle_to_tag > 0.1:
+            self.twist.angular.z = -0.15
+
+        #move forwards
+        self.distance_to_tag = sqrt(
+            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
+        if self.distance_to_tag < 0.5:
+            self.twist.linear.x = -0.05
+        elif self.distance_to_tag > 0.7:
+            self.twist.linear.x = 0.05
+
+                # allign to tag
+        if self.distance_to_tag < 0.7:
+                self.twist.linear.y = -0.05
+
+    def execute(self, userdata):
+        self.outcome = None
+        self.half_turn = 0
+        self.positive = True
+        self.block_counter = 0
+        self.index = len(userdata.tags) -1
+        self.main_tag = None
+        self.lost = 0
+        self.twist = None
+        print 'abbort found corner'
+        subscriber_tag = rospy.Subscriber('/tag_detections',
+                                      AprilTagDetectionArray, self.find_oldest_tag, userdata)
+        subscriber_imu = rospy.Subscriber('/rexrov/imu',
+                                      Imu, update_rotation, self)
+        cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
+        self.rate = rospy.Rate(ROS_RATE)
+        while self.main_tag == None:
+            pass
+        while self.outcome == None:
+            self.calculate_twist()
+            # if self.distance_to_tag < 0.7:
+                # self.twist = Twist()
+                # # self.twist.linear.y = 0.15
+                # self.twist.angular.z = 0.05
+            cmd_vel_pub.publish(self.twist)
+            if self.lost > 15:
+                self.outcome = 'failure'
+            self.rate.sleep()
+        print 'outcome :'
+        print self.outcome 
+        twist = Twist()
+        cmd_vel_pub.publish(twist)
+        subscriber_tag.unregister()
+        subscriber_imu.unregister()
+        cmd_vel_pub.unregister()
+        return self.outcome
+
+
+
+
 
 class Docking(State):
     def __init__(self):
@@ -591,7 +768,12 @@ if __name__ == '__main__':
         StateMachine.add('CORNER', Corner(), transitions={
                          'found_next': 'APPROACHING_TARGET', 'failure': 'failure', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
         StateMachine.add('ABBORT', Abbort(), transitions={
-                         'ready_to_dock': 'DOCKING', 'failure': 'failure'}, remapping={'tags': 'tags'})
+                         'ready_to_dock': 'DOCKING', 'corner':'ABBORT_CORNER', 'no_old_tags':'ABBORT_LOST_TAGS', 'failure': 'failure'}, remapping={'tags': 'tags'})
+        StateMachine.add('ABBORT_LOST_TAGS', Abbort_lost_tags(), transitions={
+                         'found': 'ABBORT', 'failure': 'failure'}, remapping={'tags': 'tags'})
+        StateMachine.add('ABBORT_CORNER', Abbort_corner(), transitions={
+                         'found': 'ABBORT', 'failure': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('DOCKING', Docking(), transitions={
                          'docked':'success', 'failure': 'failure'}, remapping={'tags': 'tags'})
+                         
     sm.execute()
