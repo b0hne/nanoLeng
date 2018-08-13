@@ -13,7 +13,7 @@ from operator import itemgetter
 
 ROS_RATE = 20
 PI = 3.1415926535897
-MAX_TAG_DISTANCE = 0.6
+MAX_TAG_DISTANCE = 0.7
 ABBORT_TAG = 586
 
 
@@ -69,7 +69,7 @@ def calculate_twist(self):
     distance_to_tag = sqrt(
         pow(self.localTag.pose.pose.position.x, 2) + pow(self.localTag.pose.pose.position.y, 2) + pow(self.localTag.pose.pose.position.z, 2))
     self.distance_to_tag = distance_to_tag
-    if distance_to_tag < 0.5:
+    if distance_to_tag < 0.6:
         self.twist.linear.x = -0.05
     elif distance_to_tag < 0.8:
         self.twist.linear.x = 0.05
@@ -132,42 +132,6 @@ class Approaching_target(State):
                        'tags'], output_keys=['tags'])
 
     def calculate_twist(self):
-        # localTag = None
-        # while True:
-        #     count = self.block_counter
-        #     if (count % 2) == 0:
-        #         localTag = self.tag
-        #     if self.block_counter == count:
-        #         break
-        # self.twist = Twist()
-        # print 'moving towards:'
-        # print localTag.id
-
-        # #get tag into vertical middle of camera
-        # vertical_angle_to_tag = localTag.pose.pose.position.y
-        # if vertical_angle_to_tag > 0.1:
-        #     self.twist.linear.z = -0.15
-        # elif vertical_angle_to_tag < -0.1:
-        #     self.twist.linear.z = 0.15
-
-        # #get tag into horizontal middle of camera
-        # horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-
-        # if horizontal_angle_to_tag < -0.1:
-        #     self.twist.angular.z = 0.15
-
-        # elif horizontal_angle_to_tag > 0.1:
-        #     self.twist.angular.z = -0.15
-
-        # #move forwards
-        # distance_to_tag = sqrt(
-        #     pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
-        # if distance_to_tag < 0.8:
-        #     self.twist.linear.x = -0.05
-        # elif distance_to_tag < 0.9:
-        #     self.twist.linear.x = 0.05
-        # else:
-        #     self.twist.linear.x = 0.1
         calculate_twist(self)
 
                 # allign to tag
@@ -186,7 +150,7 @@ class Approaching_target(State):
                 self.twist.linear.y = -0.1  
 
          # finish once tag is in reach
-        if self.distance_to_tag < 1 and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
+        if self.distance_to_tag < 8 and self.distance_to_tag > 0.6 and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
             self.outcome = 'reached'
             return
 
@@ -298,9 +262,9 @@ class Corner(State):
                 self.outcome = signal
                 return
             counter += 1
-            if tag.id == self.corner_tag.id:
+            if tag.id == self.main_tag.id:
                 self.block_counter += 1
-                self.corner_tag = tag
+                self.main_tag = tag
                 self.block_counter += 1
                 corner = counter
                 # break
@@ -320,41 +284,9 @@ class Corner(State):
             self.timeout += 1
 
     def calculate_twist(self):
-        localTag = None
-        while True:
-            count = self.block_counter
-            if (count % 2) == 0:
-                localTag = self.corner_tag
-            if self.block_counter == count:
-                break
-        self.twist = Twist()
-        # fix hight
-        #get tag into vertical middle of camera
-        vertical_angle_to_tag = localTag.pose.pose.position.y
-        if vertical_angle_to_tag > 0.1:
-            self.twist.linear.z = -0.15
-        elif vertical_angle_to_tag < -0.1:
-            self.twist.linear.z = 0.15
-
-        #get tag into horizontal middle of camera
-        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-
-        if horizontal_angle_to_tag < -0.1:
-            self.twist.angular.z = 0.15
-
-        elif horizontal_angle_to_tag > 0.1:
-            self.twist.angular.z = -0.15
-
-        #move forwards
-        distance_to_tag = sqrt(
-            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
-        if distance_to_tag < 0.5:
-            self.twist.linear.x = -0.05
-        elif distance_to_tag > 0.7:
-            self.twist.linear.x = 0.05
-
+        calculate_twist(self)
                 # allign to tag
-        if distance_to_tag < 0.7:
+        if self.distance_to_tag < 0.8:
                 self.twist.linear.y = 0.05
 
 
@@ -362,7 +294,7 @@ class Corner(State):
         self.outcome = None
         self.half_turn = 0
         self.positive = True
-        self.corner_tag = userdata.tags[-1]
+        self.main_tag = userdata.tags[-1]
         self.block_counter = 0
         self.timeout = 0
         self.twist = None
@@ -522,6 +454,7 @@ class Abbort(State):
                     if tag.id == old_tag.id:
                         self.index = counter
                         if self.main_tag != None and tag.id != self.main_tag.id:
+                            
                             self.reached = False
                         counter = 0
                         self.block_counter +=1
@@ -633,7 +566,14 @@ class Abbort_corner(State):
                         self.lost = 0
                         return
                     if self.main_tag != None and tag.id != self.main_tag.id:
-                        self.outcome = 'found'
+                        dif_x = self.main_tag.pose.pose.position.x - tag.pose.pose.position.x
+                        dif_y = self.main_tag.pose.pose.position.y - tag.pose.pose.position.y
+                        distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
+                        distance_to_new_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
+
+                        # if distance_tags > MAX_TAG_DISTANCE:
+                        if distance_tags < 0.8 and distance_to_new_tag < 1:
+                            self.outcome = 'found'
                         return
                     # find cornertag
                     if tag.id == old_tag.id:
@@ -647,38 +587,12 @@ class Abbort_corner(State):
                         return
 
     def calculate_twist(self):
-        localTag = None
-        while True:
-            count = self.block_counter
-            if (count % 2) == 0:
-                localTag = self.main_tag
-            if self.block_counter == count:
-                break
-        self.twist = Twist()
-        # fix hight
-        #get tag into vertical middle of camera
-        vertical_angle_to_tag = localTag.pose.pose.position.y
-        if vertical_angle_to_tag > 0.1:
-            self.twist.linear.z = -0.15
-        elif vertical_angle_to_tag < -0.1:
-            self.twist.linear.z = 0.15
 
-        #get tag into horizontal middle of camera
-        horizontal_angle_to_tag = atan2(localTag.pose.pose.position.x, localTag.pose.pose.position.z)
-
-        if horizontal_angle_to_tag < -0.1:
-            self.twist.angular.z = 0.15
-
-        elif horizontal_angle_to_tag > 0.1:
-            self.twist.angular.z = -0.15
-
-        #move forwards
-        self.distance_to_tag = sqrt(
-            pow(localTag.pose.pose.position.x, 2) + pow(localTag.pose.pose.position.y, 2) + pow(localTag.pose.pose.position.z, 2))
-        if self.distance_to_tag < 0.5:
-            self.twist.linear.x = -0.05
-        elif self.distance_to_tag > 0.7:
-            self.twist.linear.x = 0.05
+        calculate_twist(self)
+        # if self.distance_to_tag < 0.5:
+        #     self.twist.linear.x = -0.05
+        # elif self.distance_to_tag > 0.7:
+        #     self.twist.linear.x = 0.05
 
                 # allign to tag
         if self.distance_to_tag < 0.7:
