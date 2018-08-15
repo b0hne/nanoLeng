@@ -13,7 +13,11 @@ from operator import itemgetter
 
 ROS_RATE = 20
 PI = 3.1415926535897
-MAX_TAG_DISTANCE = 0.7
+MAX_TAG_DISTANCE = 0.8
+MIN_TAG_DISTANCE = 0.6
+MAX_LOST_VISUAL = 15
+MAX_HALF_TURN = 2
+
 ABBORT_TAG = 586
 
 
@@ -69,9 +73,9 @@ def calculate_twist(self):
     distance_to_tag = sqrt(
         pow(self.localTag.pose.pose.position.x, 2) + pow(self.localTag.pose.pose.position.y, 2) + pow(self.localTag.pose.pose.position.z, 2))
     self.distance_to_tag = distance_to_tag
-    if distance_to_tag < 0.6:
+    if distance_to_tag < MIN_TAG_DISTANCE:
         self.twist.linear.x = -0.05
-    elif distance_to_tag < 0.8:
+    elif distance_to_tag < MAX_TAG_DISTANCE:
         self.twist.linear.x = 0.05
     else:
         self.twist.linear.x = 0.1
@@ -112,7 +116,7 @@ class Looking_for_first_target(State):
 
         while self.outcome == None:
             # count if turns in self.turn
-            if self.half_turn > 2:
+            if self.half_turn > MAX_HALF_TURN:
                 self.outcome = 'not_found'
 
             cmd_vel_pub.publish(self.turn_left)
@@ -136,21 +140,21 @@ class Approaching_target(State):
 
                 # allign to tag
         angle_to_tag = self.main_tag.pose.pose.orientation.z
-        if self.distance_to_tag < 1.5:
-            if angle_to_tag < -0.1:
-                self.twist.linear.y = 0.05
+        # if self.distance_to_tag < 1.5:
+        if angle_to_tag < -0.1:
+            self.twist.linear.y = 0.05
 
-            elif angle_to_tag > 0.1:
-                self.twist.linear.y = -0.05
-        else:
-            if angle_to_tag < -0.1:
-                self.twist.linear.y = 0.1
+        elif angle_to_tag > 0.1:
+            self.twist.linear.y = -0.05
+        # else:
+            # if angle_to_tag < -0.1:
+            #     self.twist.linear.y = 0.1
 
-            elif angle_to_tag > 0.1:
-                self.twist.linear.y = -0.1  
+            # elif angle_to_tag > 0.1:
+            #     self.twist.linear.y = -0.1  
 
          # finish once tag is in reach
-        if self.distance_to_tag < 8 and self.distance_to_tag > 0.6 and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
+        if self.distance_to_tag < MAX_TAG_DISTANCE*2 and self.distance_to_tag > MIN_TAG_DISTANCE and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
             self.outcome = 'reached'
             return
 
@@ -168,7 +172,7 @@ class Approaching_target(State):
                 self.block_counter += 1
                 self.counter = 0
                 self.newPosition = True
-        if self.counter > 15:
+        if self.counter > MAX_LOST_VISUAL:
             self.outcome = 'lost_visual'
 
     def execute(self, userdata):
@@ -231,7 +235,7 @@ class Find_tag_again(State):
         self.turn_right.angular.z = -0.3  # from_degree(45)
 
         while self.outcome == None:
-            if self.half_turn > 2:
+            if self.half_turn > MAX_HALF_TURN:
                 self.outcome = 'not_found'
             cmd_vel_pub.publish(self.turn_right)
             self.rate.sleep()
@@ -346,7 +350,7 @@ class Looking_for_next_target(State):
             if tag.id == self.old_tag_id:
                 last_used_tag = counter
                 # break
-        if last_used_tag >= 0 and self.half_turn >= 2:
+        if last_used_tag >= 0 and self.half_turn >= MAX_HALF_TURN:
             self.outcome = 'corner'
             return
         if last_used_tag > 0:
@@ -381,7 +385,7 @@ class Looking_for_next_target(State):
 
         while self.outcome == None:
             # count if turns in self.turn
-            if self.half_turn > 2:
+            if self.half_turn > MAX_HALF_TURN:
                 self.outcome = 'failure'
 
             cmd_vel_pub.publish(self.turn_left)
@@ -492,7 +496,7 @@ class Abbort(State):
                 self.twist = Twist()
                 self.twist.angular.z = -0.3
             cmd_vel_pub.publish(self.twist)
-            if self.half_turn > 2 and self.lost == 0:
+            if self.half_turn > MAX_HALF_TURN and self.lost == 0:
                 self.outcome = 'corner'
             self.rate.sleep()
         print 'outcome :'
@@ -531,8 +535,8 @@ class Abbort_lost_tags(State):
         self.turn_right.angular.z = -0.3  # from_degree(45)
 
         while self.outcome == None:
-            if self.half_turn > 2:
-                self.outcome = 'not_found'
+            if self.half_turn > MAX_HALF_TURN:
+                self.outcome = 'failure'
             cmd_vel_pub.publish(self.turn_right)
             self.rate.sleep()
         print 'outcome :'
@@ -554,34 +558,38 @@ class Abbort_corner(State):
         if self.outcome == None:
             for old_tag in userdata.tags:
                 counter += 1
+                if counter > self.index:
+                    self.lost += 1
+                    return
                 for tag in tags.detections:
-                    #if oldest tag is found
-                    if counter > self.index:
-                        self.lost += 1
-                        return
-                    if self.main_tag != None and tag.id == self.main_tag.id:
-                        self.block_counter +=1
-                        self.main_tag = tag
-                        self.block_counter +=1
-                        self.lost = 0
-                        return
-                    if self.main_tag != None and tag.id != self.main_tag.id:
-                        dif_x = self.main_tag.pose.pose.position.x - tag.pose.pose.position.x
-                        dif_y = self.main_tag.pose.pose.position.y - tag.pose.pose.position.y
-                        distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
-                        distance_to_new_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
 
-                        # if distance_tags > MAX_TAG_DISTANCE:
-                        if distance_tags < 0.8 and distance_to_new_tag < 1:
-                            self.outcome = 'found'
-                        return
+
+                    if self.main_tag != None:
+                        #case: same tag is found
+                        if tag.id == self.main_tag.id:
+                            self.block_counter +=1
+                            self.main_tag = tag
+                            self.block_counter +=1
+                            self.lost = 0
+                            return
+                        #case: older tag is found
+                        if tag.id != self.main_tag.id:
+                            dif_x = self.main_tag.pose.pose.position.x - tag.pose.pose.position.x
+                            dif_y = self.main_tag.pose.pose.position.y - tag.pose.pose.position.y
+                            distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
+                            distance_to_new_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
+
+                            # if distance_tags > MAX_TAG_DISTANCE:
+                            if distance_tags < MAX_TAG_DISTANCE and distance_to_new_tag < 1:
+                                self.outcome = 'found'
+                            return
                     # find cornertag
-                    if tag.id == old_tag.id:
+                    elif tag.id == old_tag.id:
                         self.index = counter
                         self.block_counter +=1
                         self.main_tag = tag
                         self.block_counter +=1
-                        print 'tag :'
+                        print 'corner tag :'
                         print self.main_tag
                         self.lost = 0
                         return
@@ -589,10 +597,6 @@ class Abbort_corner(State):
     def calculate_twist(self):
 
         calculate_twist(self)
-        # if self.distance_to_tag < 0.5:
-        #     self.twist.linear.x = -0.05
-        # elif self.distance_to_tag > 0.7:
-        #     self.twist.linear.x = 0.05
 
                 # allign to tag
         if self.distance_to_tag < 0.7:
@@ -617,13 +621,12 @@ class Abbort_corner(State):
         while self.main_tag == None:
             pass
         while self.outcome == None:
+            # count if turns in self.turn
+            if self.half_turn > MAX_HALF_TURN:
+                self.outcome = 'failure'
             self.calculate_twist()
-            # if self.distance_to_tag < 0.7:
-                # self.twist = Twist()
-                # # self.twist.linear.y = 0.15
-                # self.twist.angular.z = 0.05
             cmd_vel_pub.publish(self.twist)
-            if self.lost > 15:
+            if self.lost > MAX_LOST_VISUAL:
                 self.outcome = 'failure'
             self.rate.sleep()
         print 'outcome :'
