@@ -7,16 +7,16 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu
 
 from smach import State, StateMachine
-from time import sleep
+# from time import sleep
 from math import atan2, sqrt
 from operator import itemgetter
 
 ROS_RATE = 20
-PI = 3.1415926535897
 MAX_TAG_DISTANCE = 0.8
 MIN_TAG_DISTANCE = 0.6
 MAX_LOST_VISUAL = 15
 MAX_HALF_TURN = 2
+PI = 3.1415926535897
 
 ABBORT_TAG = 586
 
@@ -24,11 +24,7 @@ ABBORT_TAG = 586
 def from_degree(degree):
     return degree*PI/360
 
-
-# def scan_callback(tag):
-#     return
-
-    #count rotations for 'not_found' or 'corner'
+    #count rotations using IMU
 def update_rotation(imu, self):
     if self.positive and imu.orientation.w > 0:
         self.half_turn +=1
@@ -43,30 +39,30 @@ def check_for_signal(tag):
     else:
         return None
 
+#create Twist aiming towards given Tag
 def calculate_twist(self):
     self.localTag = None
+    #critical section
     while True:
         count = self.block_counter
         if (count % 2) == 0:
             self.localTag = self.main_tag
-        if self.block_counter == count:
-            break
+            if self.block_counter == count:
+                break
+    #end critical section
     self.twist = Twist()
     
-    #get tag into vertical middle of camera
-    vertical_angle_to_tag = self.localTag.pose.pose.position.y
-    self.vertical_angle_to_tag = vertical_angle_to_tag
-    if vertical_angle_to_tag > 0.1:
+    #move vertical middle of camera towards tag
+
+    if self.localTag.pose.pose.position.y > 0.1:
         self.twist.linear.z = -0.15
-    elif vertical_angle_to_tag < -0.1:
+    elif self.localTag.pose.pose.position.y < -0.1:
         self.twist.linear.z = 0.15
 
-    #get tag into horizontal middle of camera
-    horizontal_angle_to_tag = atan2(self.localTag.pose.pose.position.x, self.localTag.pose.pose.position.z)
-    self.horizontal_angle_to_tag = horizontal_angle_to_tag
-    if horizontal_angle_to_tag < -0.1:
+    #move horizontal middle of camera towards tag
+    if self.localTag.pose.pose.position.x < -0.1:
         self.twist.angular.z = 0.15
-    elif horizontal_angle_to_tag > 0.1:
+    elif self.localTag.pose.pose.position.x > 0.1:
         self.twist.angular.z = -0.15
 
     #move forwards
@@ -154,7 +150,7 @@ class Approaching_target(State):
             #     self.twist.linear.y = -0.1  
 
          # finish once tag is in reach
-        if self.distance_to_tag < MAX_TAG_DISTANCE*2 and self.distance_to_tag > MIN_TAG_DISTANCE and self.vertical_angle_to_tag < (0.1) and self.vertical_angle_to_tag > (-0.1) and self.horizontal_angle_to_tag < 0.1 and self.horizontal_angle_to_tag > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
+        if self.distance_to_tag < MAX_TAG_DISTANCE and self.distance_to_tag > MIN_TAG_DISTANCE and self.localTag.pose.pose.position.y < (0.1) and self.localTag.pose.pose.position.y > (-0.1) and self.localTag.pose.pose.position.x < 0.1 and self.localTag.pose.pose.position.x > -0.1 and angle_to_tag < 0.2 and angle_to_tag > -0.3:
             self.outcome = 'reached'
             return
 
@@ -354,7 +350,6 @@ class Looking_for_next_target(State):
             self.outcome = 'corner'
             return
         if last_used_tag > 0:
-            new_tag = last_used_tag - 1
             dif_x = tags.detections[new_tag].pose.pose.position.x - tags.detections[last_used_tag].pose.pose.position.x
             dif_y = tags.detections[new_tag].pose.pose.position.y - tags.detections[last_used_tag].pose.pose.position.y
             distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
