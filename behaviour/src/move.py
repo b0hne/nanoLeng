@@ -124,7 +124,7 @@ class Looking_for_first_target(State):
 # approach newest tag in tags 
 class Approaching_target(State):
     def __init__(self):
-        State.__init__(self, outcomes=['reached', 'lost_visual', 'abbort'], input_keys=[
+        State.__init__(self, outcomes=['reached', 'lost_visual', 'failure', 'abbort'], input_keys=[
                        'tags'], output_keys=['tags'])
 
     def create_twist(self):
@@ -267,7 +267,8 @@ class Corner(State):
             new_tag = corner - 1
             dif_x = tags.detections[new_tag].pose.pose.position.x - tags.detections[corner].pose.pose.position.x
             dif_y = tags.detections[new_tag].pose.pose.position.y - tags.detections[corner].pose.pose.position.y
-            distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
+            dif_z = tags.detections[new_tag].pose.pose.position.z - tags.detections[corner].pose.pose.position.z
+            distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2) + pow(dif_z, 2))
             # distance_to_new_tag = sqrt(pow(tags.detections[corner -1].pose.pose.position.x, 2) + pow(tags.detections[corner -1].pose.pose.position.y, 2) + pow(tags.detections[corner -1].pose.pose.position.z, 2))
 
             # if distance_tags > MAX_TAG_DISTANCE:
@@ -433,7 +434,7 @@ class Abbort(State):
 
                     # update maintag
                     if self.main_tag != None and tag.id == self.main_tag.id:
-
+                        print "found maintag"
                         # critical section
                         self.block_counter +=1
                         self.main_tag = tag
@@ -448,7 +449,8 @@ class Abbort(State):
                             if tag.id == 0:
                                 self.outcome = 'ready_to_dock'
                         self.lost = 0
-                        self.half_turn = 0
+                        if self.half_turn > MAX_HALF_TURN and self.reached:
+                            self.outcome = 'corner'
                         return
                     
                     #found earlier tag that main tag
@@ -456,16 +458,17 @@ class Abbort(State):
                         self.index = counter
                         if self.main_tag != None and tag.id != self.main_tag.id:
                             self.reached = False
-                        counter = 0
+                        # counter = 0
                         # critical section
                         self.block_counter +=1
                         self.main_tag = tag
                         self.block_counter +=1
                         # end critical section
                         print 'tag :'
-                        print self.main_tag
-                        self.lost = 0
+                        print self.main_tag.id
+                        # self.lost = 0
                         self.half_turn = 0
+
                         return
 
     def execute(self, userdata):
@@ -496,8 +499,8 @@ class Abbort(State):
                 self.twist.angular.z = -0.3
             cmd_vel_pub.publish(self.twist)
 
-            if self.half_turn > MAX_HALF_TURN and self.lost == 0:
-                self.outcome = 'corner'
+            print self.half_turn
+
             self.rate.sleep()
         print 'outcome :'
         print self.outcome
@@ -554,6 +557,7 @@ class Abbort_corner(State):
 
     def find_oldest_tag(self, tags, userdata):
         counter = -1
+        mainindex = -1
         if self.outcome == None:
             for old_tag in userdata.tags:
                 counter += 1
@@ -570,6 +574,7 @@ class Abbort_corner(State):
                             self.block_counter +=1
                             self.main_tag = tag
                             self.block_counter +=1
+                            mainindex = counter
                             # end critical section 
                             self.lost = 0
                             return
@@ -582,6 +587,7 @@ class Abbort_corner(State):
 
                             # if distance_tags > MAX_TAG_DISTANCE:
                             # if distance_tags < MAX_TAG_DISTANCE and distance_to_new_tag < 1:
+                            if mainindex >=0 and mainindex > counter and tag.pose.pose.orientation.z < 0.35:
                                 self.outcome = 'found'
                             return
                     # find cornertag
@@ -637,7 +643,7 @@ class Abbort_corner(State):
         print self.outcome 
         cmd_vel_pub.publish(Twist())
         subscriber_tag.unregister()
-        subscriber_imu.unregister()
+        # subscriber_imu.unregister()
         cmd_vel_pub.unregister()
         return self.outcome
 
@@ -688,9 +694,9 @@ if __name__ == '__main__':
         StateMachine.add('CORNER', Corner(), transitions={
                          'found_next': 'APPROACHING_TARGET', 'failure': 'failure', 'abbort':'ABBORT'}, remapping={'tags': 'tags'})
         StateMachine.add('ABBORT', Abbort(), transitions={
-                         'ready_to_dock': 'DOCKING', 'corner':'ABBORT_CORNER', 'no_old_tags':'ABBORT_LOST_TAGS', 'failure': 'failure'}, remapping={'tags': 'tags'})
-        StateMachine.add('ABBORT_LOST_TAGS', Abbort_lost_tags(), transitions={
-                         'found': 'ABBORT', 'failure': 'failure'}, remapping={'tags': 'tags'})
+                         'ready_to_dock': 'DOCKING', 'corner':'ABBORT_CORNER', 'no_old_tags':'failure', 'failure': 'failure'}, remapping={'tags': 'tags'})
+        # StateMachine.add('ABBORT_LOST_TAGS', Abbort_lost_tags(), transitions={
+        #                  'found': 'ABBORT', 'failure': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('ABBORT_CORNER', Abbort_corner(), transitions={
                          'found': 'ABBORT', 'failure': 'failure'}, remapping={'tags': 'tags'})
         StateMachine.add('DOCKING', Docking(), transitions={
