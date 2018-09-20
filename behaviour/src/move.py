@@ -19,6 +19,7 @@ MAX_LOST_VISUAL = 15
 MAX_HALF_TURN = 2
 PI = 3.1415926535897
 
+BASE_TAG = 0
 ABBORT_TAG = 586
 
 
@@ -419,7 +420,7 @@ class Abbort(State):
     def __init__(self):
         State.__init__(self, outcomes=['ready_to_dock', 'corner', 'no_old_tags', 'failure'], input_keys=['tags'], output_keys=['tags'])     
     
-    def find_oldest_tag(self, tags, userdata):
+    def find_earliest_tag(self, tags, userdata):
         counter = -1
         if self.outcome == None:
             # find earliest referenced tag
@@ -432,45 +433,55 @@ class Abbort(State):
                         self.lost += 1
                         return
 
-                    # update maintag
-                    if self.main_tag != None and tag.id == self.main_tag.id:
-                        print "found maintag"
-                        # critical section
-                        self.block_counter +=1
-                        self.main_tag = tag
-                        self.block_counter +=1
-                        # end critical section
-
-                        # stop when in reach
-                        distance_to_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
-                        if distance_to_tag < MAX_TAG_DISTANCE:
-                            self.reached = True
-                            # check for zero tag
-                            if tag.id == 0:
-                                self.outcome = 'ready_to_dock'
-                        self.lost = 0
-                        if self.half_turn > MAX_HALF_TURN and self.reached:
-                            self.outcome = 'corner'
-                        return
-                    
-                    #found earlier tag that main tag
+                    # if found
                     if tag.id == old_tag.id:
-                        self.index = counter
-                        if self.main_tag != None and tag.id != self.main_tag.id:
+                        self.lost = 0
+                            
+                        # update maintag
+                        if self.main_tag != None:
+                            
+                            print "found tag"
+                            if counter != self.index:
+                                self.reached = False
+                                self.index = counter
+                            
+                            # critical section
+                            self.block_counter +=1
+                            self.main_tag = tag
+                            self.block_counter +=1
+                            # end critical section
+                            
+                            distance_to_tag = sqrt(pow(tag.pose.pose.position.x, 2) + pow(tag.pose.pose.position.y, 2) + pow(tag.pose.pose.position.z, 2))
+                            print tag.pose.pose.orientation.z
+                            print self.half_turn
+
+                            # stop when in reach
+                            if MIN_TAG_DISTANCE <= distance_to_tag and distance_to_tag <= MAX_TAG_DISTANCE and -0.4 <= tag.pose.pose.orientation.z and tag.pose.pose.orientation.z <= 0.4:
+                                print "through"
+                                self.reached = True
+                                # check for base tag
+                                if tag.id == BASE_TAG:
+                                    self.outcome = 'ready_to_dock'
+                            if self.half_turn >= MAX_HALF_TURN and self.reached:
+                                userdata.tags.append(self.main_tag)
+                                self.outcome = 'corner'
+                            
+                        
+                        # #found earliest known tag
+                        else:
+                            self.index = counter
                             self.reached = False
-                        # counter = 0
-                        # critical section
-                        self.block_counter +=1
-                        self.main_tag = tag
-                        self.block_counter +=1
-                        # end critical section
-                        print 'tag :'
-                        print self.main_tag.id
-                        # self.lost = 0
-                        self.half_turn = 0
+                            # critical section
+                            self.block_counter +=1
+                            self.main_tag = tag
+                            self.block_counter +=1
+                            # end critical section
+                            print 'first tag :'
+                            print self.main_tag.id
+                            # self.lost = 0
+                            self.half_turn = 0
 
-                        return
-
+                            
     def execute(self, userdata):
         self.outcome = None
         self.half_turn = 0
@@ -483,7 +494,7 @@ class Abbort(State):
         self.lost = 0
         print 'abbort, returning home'
         subscriber_tag = rospy.Subscriber('/tag_detections',
-                                      AprilTagDetectionArray, self.find_oldest_tag, userdata)
+                                      AprilTagDetectionArray, self.find_earliest_tag, userdata)
         subscriber_imu = rospy.Subscriber('/rexrov/imu',
                                       Imu, update_rotation, self)
         cmd_vel_pub = rospy.Publisher('/rexrov/cmd_vel', Twist, queue_size=1)
@@ -499,7 +510,6 @@ class Abbort(State):
                 self.twist.angular.z = -0.3
             cmd_vel_pub.publish(self.twist)
 
-            print self.half_turn
 
             self.rate.sleep()
         print 'outcome :'
@@ -557,7 +567,6 @@ class Abbort_corner(State):
 
     def find_oldest_tag(self, tags, userdata):
         counter = -1
-        mainindex = -1
         if self.outcome == None:
             for old_tag in userdata.tags:
                 counter += 1
@@ -567,19 +576,21 @@ class Abbort_corner(State):
                 for tag in tags.detections:
 
 
-                    if self.main_tag != None:
+                    if tag.id == old_tag.id:
                         #case: same tag is found
                         if tag.id == self.main_tag.id:
                             # critical section
                             self.block_counter +=1
                             self.main_tag = tag
                             self.block_counter +=1
-                            mainindex = counter
+                            self.main_index = counter
+                            print 'corner tag :'
+                            print self.main_tag.id
                             # end critical section 
                             self.lost = 0
                             return
                         # earlier tag is found
-                        if tag.id != self.main_tag.id:
+                        elif counter < self.main_index and tag.pose.pose.orientation.z < 0.4:
                             # dif_x = self.main_tag.pose.pose.position.x - tag.pose.pose.position.x
                             # dif_y = self.main_tag.pose.pose.position.y - tag.pose.pose.position.y
                             # distance_tags = sqrt(pow(dif_x, 2) + pow(dif_y, 2))
@@ -587,21 +598,21 @@ class Abbort_corner(State):
 
                             # if distance_tags > MAX_TAG_DISTANCE:
                             # if distance_tags < MAX_TAG_DISTANCE and distance_to_new_tag < 1:
-                            if mainindex >=0 and mainindex > counter and tag.pose.pose.orientation.z < 0.35:
-                                self.outcome = 'found'
+                            # if :
+                            self.outcome = 'found'
                             return
-                    # find cornertag
-                    elif tag.id == old_tag.id:
-                        self.index = counter
-                        # critical section
-                        self.block_counter +=1
-                        self.main_tag = tag
-                        self.block_counter +=1
-                        # end critical section
-                        print 'corner tag :'
-                        print self.main_tag.id
-                        self.lost = 0
-                        return
+                        # find cornertag
+                        # elif tag.id == old_tag.id:
+                        #     self.index = counter
+                        #     # critical section
+                        #     self.block_counter +=1
+                        #     self.main_tag = tag
+                        #     self.block_counter +=1
+                        #     # end critical section
+                        #     print 'corner tag :'
+                        #     print self.main_tag.id
+                        #     self.lost = 0
+                        #     return
 
     def calculate_twist(self):
 
@@ -617,7 +628,8 @@ class Abbort_corner(State):
         self.positive = True
         self.block_counter = 0
         self.index = len(userdata.tags) -1
-        self.main_tag = None
+        self.main_tag = userdata.tags[-1]
+        del userdata.tags[-1]
         self.lost = 0
         self.twist = None
         print 'abbort found corner'
